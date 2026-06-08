@@ -6,6 +6,7 @@
  */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { registerResourceHandlers } from "./mcp/handlers/resources.js";
 import { registerToolHandlers } from "./mcp/handlers/tools.js";
 
 const SERVER_NAME = "type-cast";
@@ -66,12 +67,13 @@ async function main(): Promise<void> {
 
   const server = createServer();
   registerToolHandlers(server);
+  registerResourceHandlers(server);
 
   const transport = new StdioServerTransport();
 
   log(`starting (v${SERVER_VERSION})`);
   await server.connect(transport);
-  log("connected on stdio — tool handlers registered (resources: Phase 1b)");
+  log("connected on stdio — tool and resource handlers registered");
 }
 
 main().catch((error: unknown) => {
