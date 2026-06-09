@@ -6,6 +6,8 @@ import {
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { fetchOpenApiSchema } from "../../tools/fetch-openapi-schema.js";
+import { parseLocalTypes } from "../../tools/parse-local-types.js";
 
 /** Runtime validation for `fetch_openapi_schema` arguments. */
 export const fetchOpenApiSchemaInputSchema = z.object({
@@ -73,22 +75,20 @@ const TOOL_DEFINITIONS = [
   },
 ] as const;
 
-function placeholderResult(toolName: string) {
-  return {
-    content: [
-      {
-        type: "text" as const,
-        text: `Parser placeholder for ${toolName} — Implementation arriving in Phase 2`,
-      },
-    ],
-    isError: false,
-  };
-}
-
 function toolExecutionError(message: string) {
   return {
     content: [{ type: "text" as const, text: message }],
     isError: true,
+  };
+}
+
+function toolSuccess(summary: string, content: string) {
+  return {
+    content: [
+      { type: "text" as const, text: summary },
+      { type: "text" as const, text: content },
+    ],
+    isError: false,
   };
 }
 
@@ -111,7 +111,18 @@ export function registerToolHandlers(server: Server): void {
             `Input validation error: ${parsed.error.issues.map((i) => i.message).join("; ")}`,
           );
         }
-        return placeholderResult(TOOL_NAMES.fetchOpenApiSchema);
+
+        try {
+          const result = await fetchOpenApiSchema({ url: parsed.data.url });
+          return toolSuccess(result.summary, result.content);
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          console.error(
+            `[type-cast:tools] fetch_openapi_schema error ${JSON.stringify({ message })}`,
+          );
+          return toolExecutionError(message);
+        }
       }
 
       case TOOL_NAMES.parseLocalTypes: {
@@ -121,7 +132,21 @@ export function registerToolHandlers(server: Server): void {
             `Input validation error: ${parsed.error.issues.map((i) => i.message).join("; ")}`,
           );
         }
-        return placeholderResult(TOOL_NAMES.parseLocalTypes);
+
+        try {
+          const result = parseLocalTypes({
+            packageName: parsed.data.packageName,
+            paths: parsed.data.paths,
+          });
+          return toolSuccess(result.summary, result.content);
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          console.error(
+            `[type-cast:tools] parse_local_types error ${JSON.stringify({ message })}`,
+          );
+          return toolExecutionError(message);
+        }
       }
 
       default:

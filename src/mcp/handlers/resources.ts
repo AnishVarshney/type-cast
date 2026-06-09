@@ -5,8 +5,11 @@ import {
   McpError,
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-
-const FLATTEN_SCHEME = "flatten://";
+import {
+  FLATTEN_SCHEME,
+  parseFlattenUri,
+} from "../../resources/flatten-uri.js";
+import { readCachedResource } from "../../resources/read-resource.js";
 
 /** MCP spec: resource not found (application-defined JSON-RPC error). */
 const RESOURCE_NOT_FOUND = -32002;
@@ -28,12 +31,6 @@ const RESOURCE_TEMPLATES = [
   },
 ] as const;
 
-const EXAMPLE_PACKAGE_NAME = "example-pkg";
-
-type FlattenUri =
-  | { kind: "types"; packageName: string }
-  | { kind: "openapi"; schemaId: string };
-
 function logResourceEvent(
   event: string,
   metadata: Record<string, string>,
@@ -42,64 +39,6 @@ function logResourceEvent(
     `[type-cast:resources] ${event}`,
     JSON.stringify(metadata),
   );
-}
-
-function parseFlattenUri(uri: string): FlattenUri | null {
-  if (!uri.startsWith(FLATTEN_SCHEME)) {
-    return null;
-  }
-
-  const path = uri.slice(FLATTEN_SCHEME.length);
-
-  const typesMatch = /^types\/([^/]+)$/.exec(path);
-  if (typesMatch?.[1]) {
-    return {
-      kind: "types",
-      packageName: decodeURIComponent(typesMatch[1]),
-    };
-  }
-
-  const openapiMatch = /^openapi\/([^/]+)$/.exec(path);
-  if (openapiMatch?.[1]) {
-    return {
-      kind: "openapi",
-      schemaId: decodeURIComponent(openapiMatch[1]),
-    };
-  }
-
-  return null;
-}
-
-function buildExampleTypesMock(uri: string, packageName: string) {
-  const text = [
-    "# type-cast flatten (mock)",
-    `source: ${uri}`,
-    `package: ${packageName}`,
-    "revision: phase-1-placeholder",
-    "",
-    "## exports",
-    "- interface ExampleConfig {",
-    "    baseURL: string;",
-    "    timeout?: number;",
-    "  }",
-    "- type ExampleResponse<T> = { data: T; status: number };",
-    "- namespace ExampleHelpers {",
-    "    function createClient(config: ExampleConfig): ExampleClient;",
-    "  }",
-    "",
-    "## note",
-    "Phase 2 CacheStore will replace this mock with live @types flatten output.",
-  ].join("\n");
-
-  return {
-    contents: [
-      {
-        uri,
-        mimeType: "text/plain",
-        text,
-      },
-    ],
-  };
 }
 
 function resourceNotFound(uri: string, detail: string): never {
@@ -137,25 +76,25 @@ export function registerResourceHandlers(server: Server): void {
       );
     }
 
-    if (parsed.kind === "types") {
-      if (parsed.packageName === EXAMPLE_PACKAGE_NAME) {
-        logResourceEvent("read_hit", {
-          uri,
-          kind: "types",
-          packageName: parsed.packageName,
-        });
-        return buildExampleTypesMock(uri, parsed.packageName);
-      }
+    const cached = readCachedResource(uri);
+    if (cached) {
+      logResourceEvent("read_hit", {
+        uri,
+        kind: parsed.kind,
+      });
+      return cached;
+    }
 
+    if (parsed.kind === "types") {
       resourceNotFound(
         uri,
-        `No cached flatten output for package "${parsed.packageName}". Call parse_local_types first (Phase 2).`,
+        `No cached flatten output for package "${parsed.packageName}". Call parse_local_types first.`,
       );
     }
 
     resourceNotFound(
       uri,
-      `No cached flatten output for OpenAPI schema "${parsed.schemaId}". Call fetch_openapi_schema first (Phase 2).`,
+      `No cached flatten output for OpenAPI schema "${parsed.schemaId}". Call fetch_openapi_schema first.`,
     );
   });
 }
