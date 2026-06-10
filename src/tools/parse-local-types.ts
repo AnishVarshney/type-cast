@@ -1,3 +1,4 @@
+import { getResourceRegistry } from "../cache/registry.js";
 import { getCacheStore } from "../cache/store.js";
 import { flattenTypeDeclarations } from "../parsers/typescript/flatten.js";
 import { resolveTypesPackage } from "../parsers/typescript/resolver.js";
@@ -25,6 +26,14 @@ export function parseLocalTypes(
   const resolved = resolveTypesPackage(input.packageName, input.paths);
   const uri = buildFlattenUri("types", input.packageName);
   const cache = getCacheStore();
+
+  getResourceRegistry().track({
+    kind: "types",
+    uri,
+    packageName: resolved.packageName,
+    explicitPaths: input.paths,
+    sourceFiles: resolved.files,
+  });
 
   const content = flattenTypeDeclarations(
     resolved.packageName,

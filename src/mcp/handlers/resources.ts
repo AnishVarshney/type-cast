@@ -4,7 +4,10 @@ import {
   ListResourceTemplatesRequestSchema,
   McpError,
   ReadResourceRequestSchema,
+  SubscribeRequestSchema,
+  UnsubscribeRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import type { ResourceNotificationService } from "../resource-notifications.js";
 import {
   FLATTEN_SCHEME,
   parseFlattenUri,
@@ -47,12 +50,35 @@ function resourceNotFound(uri: string, detail: string): never {
 }
 
 /**
- * Registers MCP resource template discovery and read handlers for `flatten://` URIs.
+ * Registers MCP resource template discovery, read, and subscription handlers.
  */
-export function registerResourceHandlers(server: Server): void {
+export function registerResourceHandlers(
+  server: Server,
+  notifications: ResourceNotificationService,
+): void {
   server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
     resourceTemplates: [...RESOURCE_TEMPLATES],
   }));
+
+  server.setRequestHandler(SubscribeRequestSchema, async (request) => {
+    const { uri } = request.params;
+
+    if (!uri.startsWith(FLATTEN_SCHEME) || !parseFlattenUri(uri)) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Cannot subscribe to unsupported URI: ${uri}`,
+        { uri },
+      );
+    }
+
+    notifications.subscribe(uri);
+    return {};
+  });
+
+  server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
+    notifications.unsubscribe(request.params.uri);
+    return {};
+  });
 
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     const { uri } = request.params;
@@ -78,6 +104,7 @@ export function registerResourceHandlers(server: Server): void {
 
     const cached = readCachedResource(uri);
     if (cached) {
+      notifications.markFetched(uri);
       logResourceEvent("read_hit", {
         uri,
         kind: parsed.kind,

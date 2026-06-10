@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
-import type { CacheEntry, CacheKind } from "./types.js";
+import type {
+  CacheEntry,
+  CacheKind,
+  CacheUpdateEvent,
+  CacheUpdateListener,
+} from "./types.js";
 
 function createRevision(content: string): string {
   return createHash("sha256").update(content).digest("hex").slice(0, 8);
@@ -14,6 +19,7 @@ function cacheKey(kind: CacheKind, id: string): string {
  */
 export class CacheStore {
   private readonly entries = new Map<string, CacheEntry>();
+  private readonly listeners: CacheUpdateListener[] = [];
 
   private static instance: CacheStore | null = null;
 
@@ -25,6 +31,16 @@ export class CacheStore {
   /** @internal Test-only reset — not for production use. */
   static resetInstance(): void {
     CacheStore.instance = null;
+  }
+
+  addListener(listener: CacheUpdateListener): void {
+    this.listeners.push(listener);
+  }
+
+  private emitUpdate(event: CacheUpdateEvent): void {
+    for (const listener of this.listeners) {
+      listener(event);
+    }
   }
 
   get(uri: string): CacheEntry | undefined {
@@ -40,6 +56,7 @@ export class CacheStore {
   }
 
   set(uri: string, content: string): CacheEntry {
+    const isNew = !this.entries.has(uri);
     const revisionMatch = /^revision: ([a-f0-9]+)$/m.exec(content);
     const generatedAtMatch = /^generatedAt: (.+)$/m.exec(content);
 
@@ -50,8 +67,9 @@ export class CacheStore {
     };
     this.entries.set(uri, entry);
     console.error(
-      `[type-cast:cache] set ${JSON.stringify({ uri, revision: entry.revision })}`,
+      `[type-cast:cache] set ${JSON.stringify({ uri, revision: entry.revision, isNew })}`,
     );
+    this.emitUpdate({ uri, isNew, entry });
     return entry;
   }
 

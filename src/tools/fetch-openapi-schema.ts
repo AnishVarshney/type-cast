@@ -1,3 +1,4 @@
+import { getResourceRegistry } from "../cache/registry.js";
 import { getCacheStore } from "../cache/store.js";
 import {
   fetchOpenApiDocument,
@@ -29,6 +30,13 @@ export async function fetchOpenApiSchema(
   );
   const uri = buildFlattenUri("openapi", schemaId);
   const cache = getCacheStore();
+
+  getResourceRegistry().track({
+    kind: "openapi",
+    uri,
+    schemaId,
+    sourceUrl,
+  });
 
   const content = flattenOpenApiDocument(schemaId, document, sourceUrl);
 
